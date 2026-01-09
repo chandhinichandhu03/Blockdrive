@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SecureVault - Upload File</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark sticky-top">
+        <div class="container">
+            <a class="navbar-brand" href="{{ url_for('dashboard') }}">SECUREVAULT</a>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav ms-auto">
+                    <li class="nav-item"><a class="nav-link" href="{{ url_for('dashboard') }}">Dashboard</a></li>
+                    <li class="nav-item"><a class="nav-link active" href="{{ url_for('upload_file') }}">Upload</a></li>
+                    <li class="nav-item"><a class="nav-link" href="{{ url_for('logout') }}"><i
+                                class="bi bi-box-arrow-right"></i> Logout</a></li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container mt-5">
+        <div class="row justify-content-center">
+            <div class="col-md-8">
+                <div class="glass-card fade-in">
+                    <h3 class="mb-4 text-center"><i class="bi bi-cloud-upload me-2 text-primary"></i> Secure File Upload
+                    </h3>
+
+                    {% with messages = get_flashed_messages(with_categories=true) %}
+                    {% if messages %}
+                    {% for category, message in messages %}
+                    <div class="alert alert-{{ category }} alert-dismissible fade show small mb-4">
+                        {{ message }}
+                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                    </div>
+                    {% endfor %}
+                    {% endif %}
+                    {% endwith %}
+
+                    <form action="{{ url_for('upload_file') }}" method="POST" enctype="multipart/form-data"
+                        id="upload-form">
+                        <div class="mb-4">
+                            <label class="form-label">Secure Upload Zone</label>
+                            <div class="upload-zone" id="drop-zone"
+                                onclick="document.getElementById('file-input').click()">
+                                <i class="bi bi-cloud-arrow-up"></i>
+                                <p class="mb-0">Drag and drop your file here or <span class="text-info">browse</span>
+                                </p>
+                                <div id="file-name-display" class="file-name" style="display: none;"></div>
+                                <input type="file" name="file" id="file-input" required
+                                    onchange="handleFileSelect(this)">
+                            </div>
+                            <small class="text-muted d-block mt-2">Max file size: 100MB. Your file will be encrypted
+                                locally before storage.</small>
+                        </div>
+
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label text-info fw-bold">File Password (Private Lock)</label>
+                                <div class="input-group">
+                                    <span class="input-group-text bg-dark border-secondary text-white"><i
+                                            class="bi bi-lock-fill"></i></span>
+                                    <input type="password" name="file_password" class="form-control"
+                                        placeholder="Create a strong password" required>
+                                </div>
+                                <small class="text-muted">Required for decryption.</small>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label text-warning fw-bold">Password Hint</label>
+                                <div class="input-group">
+                                    <span class="input-group-text bg-dark border-secondary text-white"><i
+                                            class="bi bi-question-circle"></i></span>
+                                    <input type="text" name="password_hint" class="form-control"
+                                        placeholder="Enter a hint to help you remember">
+                                </div>
+                                <small class="text-muted">Visible on incorrect attempts.</small>
+                            </div>
+                        </div>
+
+                        <div class="row">
+                            <div class="col-md-6 mb-4">
+                                <label class="form-label fw-bold">Target Folder (Optional)</label>
+                                <select name="folder_id" class="form-control">
+                                    <option value="">Root Directory</option>
+                                    {% for folder in folders %}
+                                    <option value="{{ folder.id }}">{{ folder.name }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="col-md-6 mb-4">
+                                <label class="form-label fw-bold">File Description</label>
+                                <input type="text" name="description" class="form-control"
+                                    placeholder="Briefly describe the file...">
+                            </div>
+                        </div>
+
+                        <div class="d-grid">
+                            <button type="submit" class="btn btn-premium btn-lg">
+                                <i class="bi bi-shield-lock me-2"></i> Encrypt & Upload to Blockchain
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        const dropZone = document.getElementById('drop-zone');
+        const fileInput = document.getElementById('file-input');
+        const fileNameDisplay = document.getElementById('file-name-display');
+
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            dropZone.addEventListener(eventName, preventDefaults, false);
+        });
+
+        function preventDefaults(e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+
+        ['dragenter', 'dragover'].forEach(eventName => {
+            dropZone.addEventListener(eventName, () => dropZone.classList.add('dragover'), false);
+        });
+
+        ['dragleave', 'drop'].forEach(eventName => {
+            dropZone.addEventListener(eventName, () => dropZone.classList.remove('dragover'), false);
+        });
+
+        dropZone.addEventListener('drop', handleDrop, false);
+
+        function handleDrop(e) {
+            const dt = e.dataTransfer;
+            const files = dt.files;
+            fileInput.files = files;
+            handleFileSelect(fileInput);
+        }
+
+        function handleFileSelect(input) {
+            if (input.files.length > 0) {
+                fileNameDisplay.innerText = "Selected: " + input.files[0].name;
+                fileNameDisplay.style.display = 'block';
+                dropZone.querySelector('p').style.display = 'none';
+                dropZone.querySelector('i').className = 'bi bi-file-earmark-check text-success';
+            }
+        }
+    </script>
+</body>
+
+</html>

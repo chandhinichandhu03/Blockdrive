@@ -1,0 +1,805 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SecureVault - Dashboard</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <script src="https://cdn.jsdelivr.net/npm/fuse.js@6.6.2"></script>
+</head>
+
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark sticky-top">
+        <div class="container">
+            <a class="navbar-brand" href="#">SECUREVAULT</a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav ms-auto">
+                    <li class="nav-item"><a class="nav-link active" href="{{ url_for('dashboard') }}">Dashboard</a></li>
+                    <li class="nav-item"><a class="nav-link" href="{{ url_for('upload_file') }}">Upload</a></li>
+                    <li class="nav-item"><a class="nav-link" href="{{ url_for('logout') }}"><i
+                                class="bi bi-box-arrow-right"></i> Logout</a></li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container mt-5">
+        <div class="row mb-5">
+            <div class="col-md-3">
+                <button class="w-100 border-0 p-0 bg-transparent" onclick="location.href='#recent-files'">
+                    <div class="glass-card stat-card stat-btn text-center">
+                        <div class="stat-value text-primary">{{ files|length }}</div>
+                        <div class="stat-label">Total Files</div>
+                    </div>
+                </button>
+            </div>
+            <div class="col-md-3">
+                <button class="w-100 border-0 p-0 bg-transparent" data-bs-toggle="modal"
+                    data-bs-target="#createFolderModal">
+                    <div class="glass-card stat-card stat-btn text-center">
+                        <div class="stat-value text-success">{{ folders|length }}</div>
+                        <div class="stat-label">Folders</div>
+                    </div>
+                </button>
+            </div>
+            <div class="col-md-3">
+                <button class="w-100 border-0 p-0 bg-transparent"
+                    onclick="alert('Blockchain Node: Active (Simulated)\nProtocol: Ethereum\nStatus: Secure')">
+                    <div class="glass-card stat-card stat-btn text-center">
+                        <div class="stat-value text-warning"><i class="bi bi-shield-check"></i></div>
+                        <div class="stat-label">Secured Status</div>
+                    </div>
+                </button>
+            </div>
+            <div class="col-md-3">
+                <button class="w-100 border-0 p-0 bg-transparent"
+                    onclick="alert('Algorithm: AES-256-CTR\nPassphrase: User-provided\nIntegrity: SHA-256')">
+                    <div class="glass-card stat-card stat-btn text-center">
+                        <div class="stat-value text-info">AES-256</div>
+                        <div class="stat-label">Encryption</div>
+                    </div>
+                </button>
+            </div>
+        </div>
+
+        <div class="row">
+            <div class="col-md-12">
+                <div class="d-flex justify-content-between align-items-center mb-4">
+                    <div class="d-flex align-items-center">
+                        {% if current_folder %}
+                        <a href="{{ url_for('dashboard') }}" class="btn btn-outline-light btn-sm me-3"><i
+                                class="bi bi-arrow-left"></i></a>
+                        <h3>Files in <span class="text-info">{{ current_folder.name }}</span></h3>
+                        {% else %}
+                        <h3>Recent Files</h3>
+                        {% endif %}
+                    </div>
+                    <div>
+                        <a href="{{ url_for('upload_file') }}" class="btn btn-premium"><i class="bi bi-plus-lg"></i> New
+                            Upload</a>
+                        <button class="btn btn-outline-light ms-2" data-bs-toggle="modal"
+                            data-bs-target="#createFolderModal"><i class="bi bi-folder-plus"></i> New Folder</button>
+                    </div>
+                </div>
+
+                <!-- Folder Grid (Only in Root) -->
+                {% if not current_folder and folders %}
+                <div class="row mb-4">
+                    {% for folder in folders %}
+                    <div class="col-md-3 mb-3">
+                        <a href="{{ url_for('dashboard', folder_id=folder.id) }}" class="text-decoration-none">
+                            <div class="glass-card p-3 text-center border-info border-opacity-25 hover-scale">
+                                <i class="bi bi-folder-fill text-warning fs-1 mb-2"></i>
+                                <div class="text-white fw-bold">{{ folder.name }}</div>
+                                <small class="text-muted">{{ folder.files|length }} Files</small>
+                            </div>
+                        </a>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% endif %}
+
+                <!-- AI Fuzzy Search Bar -->
+                <div class="mb-4">
+                    <div class="search-container">
+                        <div class="input-group">
+                            <span class="input-group-text bg-transparent border-0 text-muted ps-3"><i
+                                    class="bi bi-search"></i></span>
+                            <input type="text" id="fileSearch" class="form-control"
+                                placeholder="Search blockchain records (AI-Fuzzy logic)..."
+                                onkeyup="performSearch(this.value)">
+                            <div class="d-flex align-items-center pe-3">
+                                <span id="searchResultCount" class="badge bg-primary bg-opacity-20 text-primary"></span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="glass-card">
+                    <div class="table-responsive">
+                        <table class="table table-dark table-hover mb-0" id="fileTable">
+                            <thead>
+                                <tr>
+                                    <th>FILE NAME</th>
+                                    <th>MATCH %</th>
+                                    <th>BLOCKCHAIN HASH</th>
+                                    <th>CREATED AT</th>
+                                    <th>STATUS</th>
+                                    <th>ACTIONS</th>
+                                </tr>
+                            </thead>
+                            <tbody id="fileTableBody">
+                                {% for file in files %}
+                                <tr class="file-row" data-name="{{ file.original_name }}"
+                                    data-hash="{{ file.blockchain_hash }}" data-id="{{ file.id }}">
+                                    <td><i class="bi bi-file-earmark-lock text-info me-2"></i> {{ file.original_name }}
+                                    </td>
+                                    <td>
+                                        <div class="match-score" style="display: none;">
+                                            <div class="progress"
+                                                style="height: 6px; width: 50px; background: rgba(255,255,255,0.1);">
+                                                <div class="progress-bar bg-info progress-bar-striped progress-bar-animated"
+                                                    role="progressbar" style="width: 0%"></div>
+                                            </div>
+                                            <div class="small text-info mt-1 fw-bold" style="font-size: 0.7rem;">0%
+                                            </div>
+                                        </div>
+                                        <span class="text-muted small no-search-label">-</span>
+                                    </td>
+                                    <td><span
+                                            class="badge rounded-pill bg-primary-subtle text-primary border border-primary-subtle"
+                                            style="font-family: monospace; font-size: 0.85rem; letter-spacing: 0.5px;">{{
+                                            file.blockchain_hash[:16] }}...</span></td>
+                                    <td>{{ file.created_at.strftime('%Y-%m-%d') }}</td>
+                                    <td><span class="badge bg-success">Verified</span></td>
+                                    <td>
+                                        <div class="d-flex align-items-center">
+                                            <button class="btn-action btn-view action-btn" data-action="view"
+                                                data-id="{{ file.id }}" data-name="{{ file.original_name }}"
+                                                data-hint="{{ file.password_hint or '' }}" title="View Content">
+                                                <i class="bi bi-eye"></i>
+                                            </button>
+                                            <button class="btn-action btn-edit action-btn" data-action="edit"
+                                                data-id="{{ file.id }}" data-name="{{ file.original_name }}"
+                                                data-hint="{{ file.password_hint or '' }}" title="Edit File">
+                                                <i class="bi bi-pencil-square"></i>
+                                            </button>
+                                            <button class="btn-action btn-share action-btn" data-action="share"
+                                                data-id="{{ file.id }}" data-name="{{ file.original_name }}"
+                                                title="Share Link">
+                                                <i class="bi bi-share"></i>
+                                            </button>
+                                            <div class="dropdown d-inline-block">
+                                                <button class="btn-action btn-convert" data-bs-toggle="dropdown"
+                                                    title="More Actions">
+                                                    <i class="bi bi-three-dots-vertical"></i>
+                                                </button>
+                                                <ul class="dropdown-menu dropdown-menu-dark">
+                                                    <li><button class="dropdown-item action-btn" data-action="download"
+                                                            data-id="{{ file.id }}" data-name="{{ file.original_name }}"
+                                                            data-hint="{{ file.password_hint or '' }}">
+                                                            <i class="bi bi-download me-2 text-info"></i>
+                                                            Download</button></li>
+                                                    <li><button class="dropdown-item action-btn" data-action="convert"
+                                                            data-id="{{ file.id }}" data-name="{{ file.original_name }}"
+                                                            data-hint="{{ file.password_hint or '' }}">
+                                                            <i class="bi bi-arrow-repeat me-2 text-warning"></i> Convert
+                                                            Format</button></li>
+                                                    <li>
+                                                        <hr class="dropdown-divider">
+                                                    </li>
+                                                    <li><button class="dropdown-item action-btn" data-action="delete"
+                                                            data-id="{{ file.id }}">
+                                                            <i class="bi bi-trash me-2 text-danger"></i> Delete
+                                                            Permanently</button>
+                                                    </li>
+                                                </ul>
+                                            </div>
+                                        </div>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                                <tr id="noFilesRow" class="{{ 'd-none' if files else '' }}">
+                                    <td colspan="6" class="text-center py-5 text-muted">
+                                        <i class="bi bi-shield-slash fs-1 d-block mb-3"></i>
+                                        No files uploaded yet. Start by uploading your first secure file!
+                                    </td>
+                                </tr>
+                                <tr id="noResultsRow" style="display: none;">
+                                    <td colspan="6" class="text-center py-5 text-warning">
+                                        <i class="bi bi-search fs-1 d-block mb-3"></i>
+                                        No matching secure records found for your search.
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Download Modal -->
+    <div class="modal fade" id="downloadModal" tabindex="-1">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content glass-card border-0">
+                <div class="modal-header border-0">
+                    <h5 class="modal-title">Unlock File</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <form id="downloadForm" method="POST">
+                    <div class="modal-body">
+                        <p id="downloadFileName" class="text-info"></p>
+                        <div id="downloadHint" class="alert alert-warning py-1 small mb-3" style="display: none;"></div>
+                        <div class="mb-3">
+                            <label class="form-label">Enter File Password</label>
+                            <input type="password" name="password" class="form-control" required
+                                placeholder="File password">
+                        </div>
+                    </div>
+                    <div class="modal-footer border-0">
+                        <button type="button" class="btn btn-outline-light" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-premium">Unlock & Download</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+    <!-- Conversion Modal -->
+    <div class="modal fade" id="convertModal" tabindex="-1">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content glass-card border-0">
+                <div class="modal-header border-0">
+                    <h5 class="modal-title"><i class="bi bi-arrow-repeat me-2"></i> Convert File Format</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <form id="convertForm" method="POST">
+                    <div class="modal-body">
+                        <p id="convertFileName" class="text-info"></p>
+                        <div id="convertHint" class="alert alert-warning py-1 small mb-3" style="display: none;"></div>
+                        <div class="mb-3">
+                            <label class="form-label">Target Format</label>
+                            <select name="target_format" class="form-control" required>
+                                <option value="pdf">PDF (Document)</option>
+                                <option value="docx">DOCX (Word)</option>
+                                <option value="png">PNG (Image)</option>
+                                <option value="jpg">JPG (Image)</option>
+                                <option value="txt">TXT (Text)</option>
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Enter File Password to Authorize</label>
+                            <input type="password" name="password" class="form-control" required
+                                placeholder="File password">
+                        </div>
+                    </div>
+                    <div class="modal-footer border-0">
+                        <button type="button" class="btn btn-outline-light" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-premium">Convert & Secure</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Create Folder Modal -->
+    <div class="modal fade" id="createFolderModal" tabindex="-1">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content glass-card border-0">
+                <div class="modal-header border-0">
+                    <h5 class="modal-title">Create New Folder</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <form action="{{ url_for('create_folder') }}" method="POST">
+                    <div class="modal-body">
+                        <div class="mb-3">
+                            <label class="form-label">Folder Name</label>
+                            <input type="text" name="folder_name" class="form-control" required
+                                placeholder="e.g. Personal Documents">
+                        </div>
+                    </div>
+                    <div class="modal-footer border-0">
+                        <button type="button" class="btn btn-outline-light" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-premium">Create Folder</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- View Modal -->
+    <div class="modal fade" id="viewModal" tabindex="-1">
+        <div class="modal-dialog modal-lg modal-dialog-centered">
+            <div class="modal-content glass-card border-0">
+                <div class="modal-header border-0">
+                    <h5 class="modal-title"><i class="bi bi-eye me-2"></i> File Preview</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <form id="viewAuthForm" onsubmit="handleView(event)">
+                    <div class="modal-body">
+                        <div id="viewPasswordSection">
+                            <p id="viewFileName" class="text-info"></p>
+                            <div id="viewHint" class="alert alert-warning py-1 small mb-3" style="display: none;"></div>
+                            <div id="viewError" class="alert alert-danger py-2 small" style="display: none;">
+                                <i class="bi bi-exclamation-triangle-fill me-2"></i> <span>Access Denied: Incorrect
+                                    Password</span>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Enter File Password to View</label>
+                                <input type="password" id="viewPassword" class="form-control" required
+                                    placeholder="File password">
+                            </div>
+                        </div>
+                        <div id="viewContentSection" style="display: none;">
+                            <pre id="fileViewer" class="p-3 bg-dark rounded text-light"
+                                style="max-height: 400px; overflow-y: auto; white-space: pre-wrap;"></pre>
+                        </div>
+                    </div>
+                    <div class="modal-footer border-0">
+                        <button type="button" class="btn btn-outline-light" data-bs-dismiss="modal">Close</button>
+                        <button type="submit" id="viewUnlockBtn" class="btn btn-premium">Unlock & View</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit Modal -->
+    <div class="modal fade" id="editModal" tabindex="-1">
+        <div class="modal-dialog modal-lg modal-dialog-centered">
+            <div class="modal-content glass-card border-0">
+                <div class="modal-header border-0">
+                    <h5 class="modal-title"><i class="bi bi-pencil-square me-2"></i> Edit Secure File</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <form id="editForm" onsubmit="handleEditSave(event)">
+                    <div class="modal-body">
+                        <div id="editPasswordSection">
+                            <p id="editFileName" class="text-info"></p>
+                            <div id="editHint" class="alert alert-warning py-1 small mb-3" style="display: none;"></div>
+                            <div id="editError" class="alert alert-danger py-2 small" style="display: none;">
+                                <i class="bi bi-exclamation-triangle-fill me-2"></i> <span>Access Denied: Incorrect
+                                    Password</span>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Enter File Password to Authorize Edit</label>
+                                <input type="password" id="editPassword" class="form-control" required
+                                    placeholder="File password">
+                            </div>
+                        </div>
+                        <div id="editContentSection" style="display: none;">
+                            <div class="mb-3">
+                                <label class="form-label">File Content</label>
+                                <textarea id="fileEditor" class="form-control bg-dark text-light" rows="10"
+                                    style="font-family: monospace;"></textarea>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer border-0">
+                        <button type="button" class="btn btn-outline-light" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" id="editActionBtn" class="btn btn-premium">Unlock Editor</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Share Modal -->
+    <div class="modal fade" id="shareModal" tabindex="-1">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content glass-card border-0">
+                <div class="modal-header border-0">
+                    <h5 class="modal-title"><i class="bi bi-share me-2"></i> Share Secure Link</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body text-center">
+                    <p id="shareFileName" class="text-info mb-4"></p>
+                    <div class="stat-card glass-card mb-4">
+                        <p class="small text-muted mb-2">Blockchain-Backed Folder/File Link</p>
+                        <code id="shareLink"
+                            class="d-block p-2 bg-dark rounded text-warning mb-3">https://securevault.app/share/0x...</code>
+                        <button class="btn btn-sm btn-outline-info" onclick="copyShareLink()">
+                            <i class="bi bi-copy me-1"></i> Copy Link
+                        </button>
+                    </div>
+                    <div class="alert alert-info border-0 bg-info bg-opacity-10 small">
+                        <i class="bi bi-shield-check me-2"></i> This link provides read access. The recipient will still
+                        need the file's secondary password to unlock the content.
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Chatbot Bubble -->
+    <div id="chat-bubble" onclick="toggleChat()">
+        <i class="bi bi-chat-dots-fill fs-3 text-white"></i>
+    </div>
+
+    <div id="chat-window" class="glass-card">
+        <div class="chat-header d-flex justify-content-between align-items-center">
+            <h5 class="m-0 text-white"><i class="bi bi-robot me-2 text-primary"></i> AI Assistant</h5>
+            <button class="btn-close btn-close-white" onclick="toggleChat()"></button>
+        </div>
+        <div id="chat-content" class="flex-grow-1 overflow-auto d-flex flex-column" style="max-height: 380px;">
+            <div class="chat-msg ai">
+                Hello! I'm your SecureVault assistant. How can I help you today?
+            </div>
+        </div>
+        <div class="chat-footer mt-auto pt-3">
+            <div class="input-group">
+                <input type="text" id="chat-input" class="form-control bg-dark border-secondary text-white shadow-none"
+                    placeholder="Ask something..."
+                    style="border-top-left-radius: 10px; border-bottom-left-radius: 10px;">
+                <button class="btn btn-premium px-3" onclick="sendMessage()"><i class="bi bi-send"></i></button>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        function toggleChat() {
+            const window = document.getElementById('chat-window');
+            window.style.display = window.style.display === 'flex' ? 'none' : 'flex';
+        }
+
+        let currentActionFileId = null;
+        let currentFileEncoding = 'utf-8';
+
+        // Initialize Action Button Listeners
+        document.addEventListener('click', function (e) {
+            const btn = e.target.closest('.action-btn');
+            if (!btn) return;
+
+            const action = btn.dataset.action;
+            const id = btn.dataset.id;
+            const name = btn.dataset.name;
+            const hint = btn.dataset.hint;
+
+            if (action === 'view') openViewModal(id, name, hint);
+            else if (action === 'edit') openEditModal(id, name, hint);
+            else if (action === 'share') openShareModal(id, name);
+            else if (action === 'download') openDownloadModal(id, name, hint);
+            else if (action === 'convert') openConvertModal(id, name, hint);
+            else if (action === 'delete') confirmDelete(id);
+        });
+
+        function openDownloadModal(fileId, fileName, hint) {
+            currentActionFileId = fileId;
+            const modal = new bootstrap.Modal(document.getElementById('downloadModal'));
+            document.getElementById('downloadForm').action = '/download/' + fileId;
+            document.getElementById('downloadFileName').innerText = 'Unlocking: ' + fileName;
+
+            const hintArea = document.getElementById('downloadHint');
+            if (hint && hintArea) {
+                hintArea.innerHTML = `<i class="bi bi-lightbulb"></i> Hint: ${hint}`;
+                hintArea.style.display = 'block';
+            } else if (hintArea) {
+                hintArea.style.display = 'none';
+            }
+            modal.show();
+        }
+
+        function openConvertModal(fileId, fileName, hint) {
+            currentActionFileId = fileId;
+            const modal = new bootstrap.Modal(document.getElementById('convertModal'));
+            document.getElementById('convertForm').action = '/convert/' + fileId;
+            document.getElementById('convertFileName').innerText = 'Converting: ' + fileName;
+
+            const hintArea = document.getElementById('convertHint');
+            if (hint && hintArea) {
+                hintArea.innerHTML = `<i class="bi bi-lightbulb"></i> Hint: ${hint}`;
+                hintArea.style.display = 'block';
+            } else if (hintArea) {
+                hintArea.style.display = 'none';
+            }
+            modal.show();
+        }
+
+        function openViewModal(fileId, fileName, hint) {
+            currentActionFileId = fileId;
+            document.getElementById('viewFileName').innerText = 'Viewing: ' + fileName;
+            document.getElementById('viewPasswordSection').style.display = 'block';
+            document.getElementById('viewContentSection').style.display = 'none';
+            document.getElementById('viewUnlockBtn').style.display = 'block';
+            document.getElementById('viewPassword').value = '';
+            document.getElementById('viewError').style.display = 'none';
+
+            // Handle hint display
+            const hintArea = document.getElementById('viewHint');
+            if (hint && hintArea) {
+                hintArea.innerHTML = `<i class="bi bi-lightbulb"></i> Password Hint: ${hint}`;
+                hintArea.style.display = 'block';
+            } else if (hintArea) {
+                hintArea.style.display = 'none';
+            }
+
+            new bootstrap.Modal(document.getElementById('viewModal')).show();
+        }
+
+        async function handleView(e) {
+            e.preventDefault();
+            const password = document.getElementById('viewPassword').value;
+            const unlockBtn = document.getElementById('viewUnlockBtn');
+            const errorDiv = document.getElementById('viewError');
+
+            errorDiv.style.display = 'none';
+            unlockBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Unlocking...';
+            unlockBtn.disabled = true;
+
+            try {
+                const response = await fetch('/view/' + currentActionFileId, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ password: password })
+                });
+                const data = await response.json();
+                if (data.success) {
+                    currentFileEncoding = data.encoding;
+                    if (data.is_image) {
+                        document.getElementById('fileViewer').innerHTML = `<img src="data:${data.mime_type};base64,${data.content}" class="img-fluid rounded shadow-sm d-block mx-auto" style="max-height: 400px;">`;
+                    } else {
+                        let viewerContent = '';
+                        if (data.is_extracted) {
+                            viewerContent = `<div class="alert alert-info py-2 small mb-3"><i class="bi bi-info-circle me-2"></i> Content extracted from ${data.encoding === 'utf-8' ? 'document' : 'file'}.</div>`;
+                        }
+
+                        // If it's truly binary and not extracted, show a cleaner hex-like preview but allow viewing
+                        if (data.is_binary && !data.is_extracted) {
+                            viewerContent += `<div class="text-center p-3 mb-3 bg-warning bg-opacity-10 rounded">
+                                <i class="bi bi-file-earmark-binary text-warning fs-3 mb-2 d-block"></i>
+                                <p class="small mb-0">Note: This file appears to contain binary data.</p>
+                            </div>`;
+                        }
+
+                        document.getElementById('fileViewer').innerHTML = viewerContent + `<pre class="m-0">${data.content}</pre>`;
+                    }
+                    document.getElementById('viewPasswordSection').style.display = 'none';
+                    document.getElementById('viewContentSection').style.display = 'block';
+                    unlockBtn.style.display = 'none';
+                } else {
+                    const errorSpan = errorDiv.querySelector('span');
+                    let errorMsg = data.error || 'Access Denied: Incorrect Password';
+                    if (data.password_hint) {
+                        errorMsg += `<br><strong class="text-warning">Hint:</strong> ${data.password_hint}`;
+                    }
+                    errorSpan.innerHTML = errorMsg;
+                    errorDiv.style.display = 'block';
+                    unlockBtn.innerHTML = 'Unlock & View';
+                    unlockBtn.disabled = false;
+                }
+            } catch (error) {
+                errorDiv.querySelector('span').innerText = 'Connection Error: Try again later';
+                errorDiv.style.display = 'block';
+                unlockBtn.innerHTML = 'Unlock & View';
+                unlockBtn.disabled = false;
+            }
+        }
+
+        function openEditModal(fileId, fileName, hint) {
+            currentActionFileId = fileId;
+            document.getElementById('editFileName').innerText = 'Editing: ' + fileName;
+            document.getElementById('editPasswordSection').style.display = 'block';
+            document.getElementById('editContentSection').style.display = 'none';
+            document.getElementById('editActionBtn').innerText = 'Unlock Editor';
+            document.getElementById('editActionBtn').classList.add('btn-premium');
+            document.getElementById('editActionBtn').classList.remove('btn-success');
+            document.getElementById('editPassword').value = '';
+            document.getElementById('editError').style.display = 'none';
+
+            const hintArea = document.getElementById('editHint');
+            if (hint && hintArea) {
+                hintArea.innerHTML = `<i class="bi bi-lightbulb"></i> Hint: ${hint}`;
+                hintArea.style.display = 'block';
+            } else if (hintArea) {
+                hintArea.style.display = 'none';
+            }
+
+            new bootstrap.Modal(document.getElementById('editModal')).show();
+        }
+
+        async function handleEditSave(e) {
+            e.preventDefault();
+            const password = document.getElementById('editPassword').value;
+            const actionBtn = document.getElementById('editActionBtn');
+            const errorDiv = document.getElementById('editError');
+            const isUnlocking = actionBtn.innerText === 'Unlock Editor';
+
+            errorDiv.style.display = 'none';
+
+            if (isUnlocking) {
+                actionBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Unlocking...';
+                try {
+                    const response = await fetch('/view/' + currentActionFileId, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ password: password })
+                    });
+                    const data = await response.json();
+                    if (data.success) {
+                        document.getElementById('fileEditor').value = data.content;
+
+                        if (data.is_extracted) {
+                            document.getElementById('editError').innerHTML = `<i class="bi bi-exclamation-triangle-fill me-2"></i> <span>Warning: This is extracted text. Saving changes will overwrite the original document structure (PDF/DOCX) with a plain text file.</span>`;
+                            document.getElementById('editError').className = "alert alert-warning py-2 small";
+                            document.getElementById('editError').style.display = 'block';
+                        }
+
+                        document.getElementById('editPasswordSection').style.display = 'none';
+                        document.getElementById('editContentSection').style.display = 'block';
+                        actionBtn.innerHTML = '<i class="bi bi-save me-2"></i> Save Changes';
+                        actionBtn.classList.remove('btn-premium');
+                        actionBtn.classList.add('btn-success');
+                    } else {
+                        const errorSpan = errorDiv.querySelector('span');
+                        let errorMsg = data.error || 'Access Denied: Incorrect Password';
+                        if (data.password_hint) {
+                            errorMsg += `<br><strong class="text-warning">Hint:</strong> ${data.password_hint}`;
+                        }
+                        errorSpan.innerHTML = errorMsg;
+                        errorDiv.className = "alert alert-danger py-2 small";
+                        errorDiv.style.display = 'block';
+                        actionBtn.innerText = 'Unlock Editor';
+                    }
+                } catch (err) {
+                    errorDiv.querySelector('span').innerText = 'Error: Connection lost';
+                    errorDiv.style.display = 'block';
+                    actionBtn.innerText = 'Unlock Editor';
+                }
+            } else {
+                const content = document.getElementById('fileEditor').value;
+                actionBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Saving...';
+                try {
+                    const response = await fetch('/edit/' + currentActionFileId, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            password: password,
+                            content: content,
+                            encoding: currentFileEncoding
+                        })
+                    });
+                    const data = await response.json();
+                    if (data.success) {
+                        alert('File updated successfully! Blockchain record updated.');
+                        location.reload();
+                    } else { alert(data.error || 'Save failed'); actionBtn.innerText = 'Save Changes'; }
+                } catch (err) { alert('Save error'); actionBtn.innerText = 'Save Changes'; }
+            }
+        }
+
+        function openShareModal(fileId, fileName) {
+            document.getElementById('shareFileName').innerText = 'Sharing: ' + fileName;
+            const shareUrl = window.location.origin + '/share/' + fileId;
+            document.getElementById('shareLink').innerText = shareUrl;
+            new bootstrap.Modal(document.getElementById('shareModal')).show();
+        }
+
+        function copyShareLink() {
+            const link = document.getElementById('shareLink').innerText;
+            navigator.clipboard.writeText(link).then(() => {
+                const btn = document.querySelector('[onclick="copyShareLink()"]');
+                const originalText = btn.innerHTML;
+                btn.innerHTML = '<i class="bi bi-check2"></i> Copied!';
+                setTimeout(() => btn.innerHTML = originalText, 2000);
+            });
+        }
+
+        function confirmDelete(fileId) {
+            if (confirm('Are you absolutely sure you want to delete this file from the blockchain and storage? This cannot be undone.')) {
+                const form = document.createElement('form');
+                form.method = 'POST';
+                form.action = '/delete/' + fileId;
+                document.body.appendChild(form);
+                form.submit();
+            }
+        }
+
+        async function sendMessage() {
+            const input = document.getElementById('chat-input');
+            const content = document.getElementById('chat-content');
+            const message = input.value.trim();
+            if (!message) return;
+
+            // Add user message
+            content.innerHTML += `<div class="chat-msg user">${message}</div>`;
+            input.value = '';
+            content.scrollTop = content.scrollHeight;
+
+            try {
+                const response = await fetch('/chatbot', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message: message })
+                });
+                const data = await response.json();
+
+                // Add AI response
+                content.innerHTML += `<div class="chat-msg ai">${data.response}</div>`;
+                content.scrollTop = content.scrollHeight;
+            } catch (error) {
+                console.error('Error:', error);
+                content.innerHTML += `<div class="chat-msg ai text-danger">Sorry, I encountered a connection error.</div>`;
+            }
+        }
+    </script>
+    <script>
+        // AI Fuzzy Search Integration
+        let fuse;
+        const fileTableBody = document.getElementById('fileTableBody');
+        const rows = Array.from(document.querySelectorAll('.file-row'));
+        const searchData = rows.map(row => ({
+            name: row.dataset.name,
+            hash: row.dataset.hash,
+            id: row.dataset.id
+        }));
+
+        const fuseOptions = {
+            includeScore: true,
+            threshold: 0.4, // Sensitivity: 0.0 perfect, 1.0 loose
+            isCaseSensitive: true,
+            keys: ['name', 'hash']
+        };
+
+        fuse = new Fuse(searchData, fuseOptions);
+
+        function performSearch(query) {
+            const resultCountLabel = document.getElementById('searchResultCount');
+            const noFilesRow = document.getElementById('noFilesRow');
+            const noResultsRow = document.getElementById('noResultsRow');
+
+            if (!query || query.trim() === '') {
+                rows.forEach(row => {
+                    row.style.display = '';
+                    row.querySelector('.match-score').style.display = 'none';
+                    row.querySelector('.no-search-label').style.display = 'inline';
+                });
+                resultCountLabel.innerText = '';
+                if (noResultsRow) noResultsRow.style.display = 'none';
+                if (noFilesRow) {
+                    noFilesRow.classList.toggle('d-none', rows.length > 0);
+                }
+                return;
+            }
+
+            if (noFilesRow) noFilesRow.classList.add('d-none');
+
+            const results = fuse.search(query);
+            resultCountLabel.innerText = `${results.length} found`;
+
+            rows.forEach(row => {
+                const id = row.dataset.id;
+                const result = results.find(r => r.item.id === id);
+
+                if (result) {
+                    row.style.display = '';
+                    const percent = Math.round((1 - result.score) * 100);
+                    const matchDiv = row.querySelector('.match-score');
+                    const bar = matchDiv.querySelector('.progress-bar');
+                    const text = matchDiv.querySelector('.small');
+
+                    matchDiv.style.display = 'block';
+                    row.querySelector('.no-search-label').style.display = 'none';
+
+                    bar.style.width = percent + '%';
+                    text.innerText = percent + '% Match';
+                } else {
+                    row.style.display = 'none';
+                }
+            });
+
+            if (noResultsRow) {
+                noResultsRow.style.display = results.length === 0 ? 'table-row' : 'none';
+            }
+        }
+    </script>
+</body>
+
+</html>
