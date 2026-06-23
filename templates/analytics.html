@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SecureVault - Analytics & Audit Trail</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        .chart-container {
+            position: relative;
+            height: 250px;
+            width: 100%;
+        }
+    </style>
+</head>
+
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark sticky-top">
+        <div class="container">
+            <a class="navbar-brand" href="{{ url_for('dashboard') }}">SECUREVAULT</a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav ms-auto">
+                    <li class="nav-item"><a class="nav-link" href="{{ url_for('dashboard') }}">Dashboard</a></li>
+                    <li class="nav-item"><a class="nav-link active" href="{{ url_for('analytics') }}">Analytics</a></li>
+                    <li class="nav-item"><a class="nav-link" href="{{ url_for('upload_file') }}">Upload</a></li>
+                    <li class="nav-item"><a class="nav-link" href="{{ url_for('logout') }}"><i class="bi bi-box-arrow-right"></i> Logout</a></li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container mt-5">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <div>
+                <h2 class="text-white fw-bold mb-0">Platform Analytics</h2>
+                <p class="text-muted small">Real-time statistics & immutable blockchain audit trails</p>
+            </div>
+            <a href="{{ url_for('dashboard') }}" class="btn btn-outline-light"><i class="bi bi-arrow-left me-2"></i>Back to Dashboard</a>
+        </div>
+
+        <!-- Stat Row -->
+        <div class="row mb-4">
+            <div class="col-md-4 mb-3">
+                <div class="glass-card stat-card text-center py-4">
+                    <div class="stat-value text-primary" id="stat-total-files">-</div>
+                    <div class="stat-label">Total Uploaded Files</div>
+                </div>
+            </div>
+            <div class="col-md-4 mb-3">
+                <div class="glass-card stat-card text-center py-4">
+                    <div class="stat-value text-success" id="stat-storage-used">-</div>
+                    <div class="stat-label">Storage Capacity Used</div>
+                </div>
+            </div>
+            <div class="col-md-4 mb-3">
+                <div class="glass-card stat-card text-center py-4">
+                    <div class="stat-value text-warning" id="stat-audit-count">-</div>
+                    <div class="stat-label">Blockchain Audited Operations</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Charts Grid -->
+        <div class="row mb-5">
+            <div class="col-md-4 mb-4">
+                <div class="glass-card p-4 h-100">
+                    <h5 class="text-white mb-4"><i class="bi bi-pie-chart text-info me-2"></i> File Formats</h5>
+                    <div class="chart-container">
+                        <canvas id="fileTypesChart"></canvas>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4 mb-4">
+                <div class="glass-card p-4 h-100">
+                    <h5 class="text-white mb-4"><i class="bi bi-bar-chart-line text-primary me-2"></i> Top Accessed Files</h5>
+                    <div class="chart-container">
+                        <canvas id="topFilesChart"></canvas>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4 mb-4">
+                <div class="glass-card p-4 h-100">
+                    <h5 class="text-white mb-4"><i class="bi bi-graph-up text-warning me-2"></i> Activity Breakdown</h5>
+                    <div class="chart-container">
+                        <canvas id="activityChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Audit Trail Table -->
+        <div class="row mb-5">
+            <div class="col-md-12">
+                <div class="d-flex justify-content-between align-items-center mb-4">
+                    <h3 class="text-white mb-0"><i class="bi bi-shield-check text-success me-2"></i> Immutable Audit Trail</h3>
+                    <span class="badge bg-success bg-opacity-15 text-success border border-success border-opacity-25 px-3 py-2">Simulation Secured</span>
+                </div>
+                
+                <div class="glass-card">
+                    <div class="table-responsive">
+                        <table class="table table-dark table-hover mb-0">
+                            <thead>
+                                <tr>
+                                    <th>ACTION</th>
+                                    <th>FILE NAME</th>
+                                    <th>BLOCKCHAIN HASH</th>
+                                    <th>TIMESTAMP</th>
+                                    <th>VERIFICATION</th>
+                                </tr>
+                            </thead>
+                            <tbody id="audit-trail-body">
+                                <tr>
+                                    <td colspan="5" class="text-center py-5 text-muted">
+                                        <div class="spinner-border spinner-border-sm text-info mb-2" role="status"></div>
+                                        Fetching secure logs...
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', async () => {
+            try {
+                const response = await fetch('/api/analytics-data');
+                const data = await response.json();
+                
+                // Format Storage Size
+                const formatSize = (bytes) => {
+                    if (bytes === 0) return '0 Bytes';
+                    const k = 1024;
+                    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+                    const i = Math.floor(Math.log(bytes) / Math.log(k));
+                    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+                };
+
+                // Update Stats
+                document.getElementById('stat-total-files').innerText = data.total_files;
+                document.getElementById('stat-storage-used').innerText = formatSize(data.total_size_bytes);
+                document.getElementById('stat-audit-count').innerText = data.activities.length;
+
+                // File Formats Chart
+                const formatsLabels = Object.keys(data.file_types);
+                const formatsValues = Object.values(data.file_types);
+                const ctxFormats = document.getElementById('fileTypesChart').getContext('2d');
+                new Chart(ctxFormats, {
+                    type: 'doughnut',
+                    data: {
+                        labels: formatsLabels.length ? formatsLabels : ['NONE'],
+                        datasets: [{
+                            data: formatsValues.length ? formatsValues : [0],
+                            backgroundColor: ['#0d6efd', '#198754', '#ffc107', '#0dcaf0', '#6f42c1', '#fd7e14'],
+                            borderWidth: 0
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: {
+                                labels: { color: '#adb5bd' }
+                            }
+                        }
+                    }
+                });
+
+                // Top Accessed Files Chart
+                const topLabels = data.top_files.map(f => f.name);
+                const topValues = data.top_files.map(f => f.access_count);
+                const ctxTop = document.getElementById('topFilesChart').getContext('2d');
+                new Chart(ctxTop, {
+                    type: 'bar',
+                    data: {
+                        labels: topLabels.length ? topLabels : ['No file access yet'],
+                        datasets: [{
+                            label: 'Views / Downloads',
+                            data: topValues.length ? topValues : [0],
+                            backgroundColor: '#0dcaf0',
+                            borderRadius: 6
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: {
+                            x: { grid: { display: false }, ticks: { color: '#adb5bd' } },
+                            y: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#adb5bd', stepSize: 1 } }
+                        },
+                        plugins: {
+                            legend: { display: false }
+                        }
+                    }
+                });
+
+                // Activity Breakdown Chart
+                const activityCounts = { 'upload': 0, 'download': 0, 'view': 0, 'verify': 0, 'delete': 0 };
+                data.activities.forEach(a => {
+                    if (activityCounts[a.action] !== undefined) {
+                        activityCounts[a.action]++;
+                    }
+                });
+
+                const ctxActivity = document.getElementById('activityChart').getContext('2d');
+                new Chart(ctxActivity, {
+                    type: 'polarArea',
+                    data: {
+                        labels: ['Uploads', 'Downloads', 'Views', 'Verifications', 'Deletions'],
+                        datasets: [{
+                            data: [
+                                activityCounts['upload'],
+                                activityCounts['download'],
+                                activityCounts['view'],
+                                activityCounts['verify'],
+                                activityCounts['delete']
+                            ],
+                            backgroundColor: [
+                                'rgba(13, 110, 253, 0.6)',
+                                'rgba(25, 135, 84, 0.6)',
+                                'rgba(255, 193, 7, 0.6)',
+                                'rgba(13, 202, 240, 0.6)',
+                                'rgba(220, 53, 69, 0.6)'
+                            ],
+                            borderWidth: 0
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: {
+                                labels: { color: '#adb5bd' }
+                            }
+                        },
+                        scales: {
+                            r: {
+                                grid: { color: 'rgba(255,255,255,0.05)' },
+                                angleLines: { color: 'rgba(255,255,255,0.05)' },
+                                pointLabels: { color: '#adb5bd' }
+                            }
+                        }
+                    }
+                });
+
+                // Audit Trail Table
+                const tbody = document.getElementById('audit-trail-body');
+                tbody.innerHTML = '';
+                
+                if (data.activities.length === 0) {
+                    tbody.innerHTML = `
+                        <tr>
+                            <td colspan="5" class="text-center py-5 text-muted">
+                                <i class="bi bi-shield-slash fs-3 d-block mb-2"></i>
+                                No operations recorded in audit log yet.
+                            </td>
+                        </tr>
+                    `;
+                    return;
+                }
+
+                data.activities.forEach(a => {
+                    let actionBadge = '';
+                    if (a.action === 'upload') actionBadge = '<span class="badge bg-primary">Upload</span>';
+                    else if (a.action === 'download') actionBadge = '<span class="badge bg-success">Download</span>';
+                    else if (a.action === 'view') actionBadge = '<span class="badge bg-warning text-dark">View</span>';
+                    else if (a.action === 'verify') actionBadge = '<span class="badge bg-info text-dark">Verify</span>';
+                    else if (a.action === 'delete') actionBadge = '<span class="badge bg-danger">Delete</span>';
+
+                    const row = document.createElement('tr');
+                    row.innerHTML = `
+                        <td>${actionBadge}</td>
+                        <td>${a.filename}</td>
+                        <td>
+                            <code class="text-warning small" style="letter-spacing: 0.5px;">
+                                ${a.blockchain_tx ? a.blockchain_tx.substring(0, 16) + '...' : 'GENESIS_BLOCK'}
+                            </code>
+                        </td>
+                        <td>${a.timestamp}</td>
+                        <td>
+                            <span class="text-success"><i class="bi bi-patch-check-fill me-1"></i> Audited</span>
+                        </td>
+                    `;
+                    tbody.appendChild(row);
+                });
+
+            } catch (err) {
+                console.error(err);
+                document.getElementById('audit-trail-body').innerHTML = `
+                    <tr>
+                        <td colspan="5" class="text-center py-5 text-danger">
+                            <i class="bi bi-exclamation-octagon fs-2 mb-2 d-block"></i>
+                            Failed to load platform analytics.
+                        </td>
+                    </tr>
+                `;
+            }
+        });
+    </script>
+</body>
+
+</html>

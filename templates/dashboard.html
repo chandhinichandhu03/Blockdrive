@@ -22,6 +22,7 @@
             <div class="collapse navbar-collapse" id="navbarNav">
                 <ul class="navbar-nav ms-auto">
                     <li class="nav-item"><a class="nav-link active" href="{{ url_for('dashboard') }}">Dashboard</a></li>
+                    <li class="nav-item"><a class="nav-link" href="{{ url_for('analytics') }}">Analytics</a></li>
                     <li class="nav-item"><a class="nav-link" href="{{ url_for('upload_file') }}">Upload</a></li>
                     <li class="nav-item"><a class="nav-link" href="{{ url_for('logout') }}"><i
                                 class="bi bi-box-arrow-right"></i> Logout</a></li>
@@ -70,7 +71,7 @@
         </div>
 
         <div class="row">
-            <div class="col-md-12">
+            <div class="col-md-9">
                 <div class="d-flex justify-content-between align-items-center mb-4">
                     <div class="d-flex align-items-center">
                         {% if current_folder %}
@@ -108,17 +109,18 @@
 
                 <!-- AI Fuzzy Search Bar -->
                 <div class="mb-4">
-                    <div class="search-container">
+                    <div class="search-container position-relative">
                         <div class="input-group">
                             <span class="input-group-text bg-transparent border-0 text-muted ps-3"><i
                                     class="bi bi-search"></i></span>
                             <input type="text" id="fileSearch" class="form-control"
-                                placeholder="Search blockchain records (AI-Fuzzy logic)..."
-                                onkeyup="performSearch(this.value)">
+                                placeholder="Search blockchain records (Trie & Fuzzy)..."
+                                onkeyup="performSearch(this.value)" autocomplete="off">
                             <div class="d-flex align-items-center pe-3">
                                 <span id="searchResultCount" class="badge bg-primary bg-opacity-20 text-primary"></span>
                             </div>
                         </div>
+                        <div id="autocomplete-suggestions" class="dropdown-menu w-100 bg-dark border-secondary text-light mt-1 p-2" style="display: none; position: absolute; z-index: 1000; box-shadow: 0 4px 15px rgba(0,0,0,0.5);"></div>
                     </div>
                 </div>
 
@@ -139,7 +141,15 @@
                                 {% for file in files %}
                                 <tr class="file-row" data-name="{{ file.original_name }}"
                                     data-hash="{{ file.blockchain_hash }}" data-id="{{ file.id }}">
-                                    <td><i class="bi bi-file-earmark-lock text-info me-2"></i> {{ file.original_name }}
+                                    <td>
+                                        <div><i class="bi bi-file-earmark-lock text-info me-2"></i> {{ file.original_name }}</div>
+                                        {% if file.tags %}
+                                        <div class="mt-1">
+                                            {% for tag in file.tags.split(', ') %}
+                                            <span class="badge bg-info bg-opacity-10 text-info font-monospace" style="font-size: 0.65rem; border: 1px solid rgba(13, 202, 240, 0.15)">{{ tag }}</span>
+                                            {% endfor %}
+                                        </div>
+                                        {% endif %}
                                     </td>
                                     <td>
                                         <div class="match-score" style="display: none;">
@@ -158,9 +168,16 @@
                                             style="font-family: monospace; font-size: 0.85rem; letter-spacing: 0.5px;">{{
                                             file.blockchain_hash[:16] }}...</span></td>
                                     <td>{{ file.created_at.strftime('%Y-%m-%d') }}</td>
-                                    <td><span class="badge bg-success">Verified</span></td>
+                                    <td>
+                                        <span id="integrity-badge-{{ file.id }}" class="badge bg-secondary bg-opacity-20 text-secondary border border-secondary border-opacity-25">Unverified</span>
+                                    </td>
                                     <td>
                                         <div class="d-flex align-items-center">
+                                            <button class="btn-action btn-verify action-btn text-success" data-action="verify"
+                                                data-id="{{ file.id }}" data-name="{{ file.original_name }}"
+                                                data-hint="{{ file.password_hint or '' }}" title="Verify Integrity">
+                                                <i class="bi bi-shield-check"></i>
+                                            </button>
                                             <button class="btn-action btn-view action-btn" data-action="view"
                                                 data-id="{{ file.id }}" data-name="{{ file.original_name }}"
                                                 data-hint="{{ file.password_hint or '' }}" title="View Content">
@@ -220,6 +237,25 @@
                                 </tr>
                             </tbody>
                         </table>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Sidebar: Heap & Activity Logs -->
+            <div class="col-md-3">
+                <!-- Heap-based Top Files Card -->
+                <div class="glass-card mb-4 p-3 fade-in">
+                    <h5 class="text-white mb-3" style="font-size: 1rem;"><i class="bi bi-fire text-warning me-2"></i> Top Accessed Files</h5>
+                    <div id="heap-top-files-list">
+                        <div class="text-muted small py-2">Loading top files...</div>
+                    </div>
+                </div>
+
+                <!-- Recent Activities Logs Card -->
+                <div class="glass-card p-3 fade-in">
+                    <h5 class="text-white mb-3" style="font-size: 1rem;"><i class="bi bi-clock-history text-info me-2"></i> Audit Action Log</h5>
+                    <div id="activity-log-list" style="max-height: 400px; overflow-y: auto; font-size: 0.75rem;">
+                        <div class="text-muted small py-2">Loading audit trail...</div>
                     </div>
                 </div>
             </div>
@@ -418,6 +454,40 @@
         </div>
     </div>
 
+    <!-- Integrity Verification Modal -->
+    <div class="modal fade" id="verifyModal" tabindex="-1">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content glass-card border-0">
+                <div class="modal-header border-0">
+                    <h5 class="modal-title"><i class="bi bi-shield-check me-2"></i> Verify File Integrity</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <form id="verifyForm" onsubmit="handleVerify(event)">
+                    <div class="modal-body">
+                        <p id="verifyFileName" class="text-info mb-1"></p>
+                        <div id="verifyHint" class="alert alert-warning py-1 small mb-3" style="display: none;"></div>
+                        <div id="verifyResult" class="alert p-3" style="display: none;">
+                            <h6 class="alert-heading fw-bold mb-1" id="verifyResultTitle"></h6>
+                            <p class="small mb-0" id="verifyResultText"></p>
+                            <div class="mt-2 font-monospace" style="font-size: 0.75rem; word-break: break-all; max-height: 100px; overflow-y: auto;" id="verifyResultHashes"></div>
+                        </div>
+                        <div id="verifyInputSection">
+                            <div class="mb-3">
+                                <label class="form-label">Enter File Password to Authorize Decryption & Hash Verification</label>
+                                <input type="password" id="verifyPassword" class="form-control" required
+                                    placeholder="File password">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer border-0">
+                        <button type="button" class="btn btn-outline-light" data-bs-dismiss="modal" id="verifyCloseBtn">Cancel</button>
+                        <button type="submit" id="verifySubmitBtn" class="btn btn-premium">Authorize & Verify</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
     <!-- Chatbot Bubble -->
     <div id="chat-bubble" onclick="toggleChat()">
         <i class="bi bi-chat-dots-fill fs-3 text-white"></i>
@@ -468,6 +538,7 @@
             else if (action === 'share') openShareModal(id, name);
             else if (action === 'download') openDownloadModal(id, name, hint);
             else if (action === 'convert') openConvertModal(id, name, hint);
+            else if (action === 'verify') openVerifyModal(id, name, hint);
             else if (action === 'delete') confirmDelete(id);
         });
 
@@ -799,6 +870,216 @@
                 noResultsRow.style.display = results.length === 0 ? 'table-row' : 'none';
             }
         }
+
+        // 1. Verify Integrity Logic
+        function openVerifyModal(fileId, fileName, hint) {
+            currentActionFileId = fileId;
+            document.getElementById('verifyFileName').innerText = 'Verifying: ' + fileName;
+            document.getElementById('verifyInputSection').style.display = 'block';
+            document.getElementById('verifyResult').style.display = 'none';
+            document.getElementById('verifySubmitBtn').style.display = 'block';
+            document.getElementById('verifySubmitBtn').disabled = false;
+            document.getElementById('verifyPassword').value = '';
+
+            const hintArea = document.getElementById('verifyHint');
+            if (hint) {
+                hintArea.innerHTML = `<i class="bi bi-lightbulb"></i> Hint: ${hint}`;
+                hintArea.style.display = 'block';
+            } else {
+                hintArea.style.display = 'none';
+            }
+
+            new bootstrap.Modal(document.getElementById('verifyModal')).show();
+        }
+
+        async function handleVerify(e) {
+            e.preventDefault();
+            const password = document.getElementById('verifyPassword').value;
+            const submitBtn = document.getElementById('verifySubmitBtn');
+            const resultDiv = document.getElementById('verifyResult');
+            const titleEl = document.getElementById('verifyResultTitle');
+            const textEl = document.getElementById('verifyResultText');
+            const hashesEl = document.getElementById('verifyResultHashes');
+
+            submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Verifying...';
+            submitBtn.disabled = true;
+
+            try {
+                const response = await fetch('/verify/' + currentActionFileId, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ password: password })
+                });
+                const data = await response.json();
+                
+                resultDiv.style.display = 'block';
+                document.getElementById('verifyInputSection').style.display = 'none';
+                submitBtn.style.display = 'none';
+
+                const badge = document.getElementById('integrity-badge-' + currentActionFileId);
+
+                if (data.success) {
+                    if (data.is_valid) {
+                        resultDiv.className = 'alert alert-success border-0 bg-success bg-opacity-10';
+                        titleEl.innerHTML = '<i class="bi bi-check-circle-fill me-2 text-success"></i> Integrity Match!';
+                        textEl.innerText = 'The unencrypted file hash matches the records stored in the secure blockchain ledger. No tampering detected.';
+                        if (badge) {
+                            badge.className = 'badge bg-success border border-success border-opacity-25';
+                            badge.innerText = 'Pass';
+                        }
+                    } else {
+                        resultDiv.className = 'alert alert-danger border-0 bg-danger bg-opacity-10';
+                        titleEl.innerHTML = '<i class="bi bi-x-circle-fill me-2 text-danger"></i> Verification Failed!';
+                        textEl.innerText = 'Warning: File hash does not match the blockchain ledger or DB hash! The file may have been modified or corrupted.';
+                        if (badge) {
+                            badge.className = 'badge bg-danger border border-danger border-opacity-25';
+                            badge.innerText = 'Failed';
+                        }
+                    }
+                    hashesEl.innerHTML = `
+                        <strong>Blockchain Tx:</strong> <span class="text-warning">${data.blockchain_tx}</span><br>
+                        <strong>Verification Tx:</strong> <span class="text-warning">${data.verification_tx}</span><br>
+                        <strong>DB Hash:</strong> <span class="text-info">${data.db_hash}</span><br>
+                        <strong>Computed Hash:</strong> <span class="text-info">${data.computed_hash}</span>
+                    `;
+                } else {
+                    resultDiv.className = 'alert alert-danger border-0 bg-danger bg-opacity-10';
+                    titleEl.innerHTML = '<i class="bi bi-exclamation-triangle-fill me-2 text-danger"></i> Error';
+                    textEl.innerText = data.error || 'Failed to authenticate and verify file integrity.';
+                    hashesEl.innerHTML = '';
+                    submitBtn.innerText = 'Authorize & Verify';
+                    submitBtn.disabled = false;
+                    submitBtn.style.display = 'block';
+                    document.getElementById('verifyInputSection').style.display = 'block';
+                    resultDiv.style.display = 'none';
+                }
+            } catch (err) {
+                resultDiv.style.display = 'block';
+                resultDiv.className = 'alert alert-danger border-0 bg-danger bg-opacity-10';
+                titleEl.innerHTML = '<i class="bi bi-exclamation-triangle-fill me-2 text-danger"></i> Connection Error';
+                textEl.innerText = 'Failed to connect to verification server.';
+                hashesEl.innerHTML = '';
+                submitBtn.innerText = 'Authorize & Verify';
+                submitBtn.disabled = false;
+                submitBtn.style.display = 'block';
+                document.getElementById('verifyInputSection').style.display = 'block';
+            }
+        }
+
+        // 2. Trie Autocomplete prefix search
+        const searchInput = document.getElementById('fileSearch');
+        const suggestionsBox = document.getElementById('autocomplete-suggestions');
+
+        searchInput.addEventListener('input', async function() {
+            const query = this.value.trim();
+            if (!query) {
+                suggestionsBox.style.display = 'none';
+                return;
+            }
+
+            try {
+                const response = await fetch('/autocomplete?query=' + encodeURIComponent(query));
+                const suggestions = await response.json();
+                
+                if (suggestions.length > 0) {
+                    suggestionsBox.innerHTML = '';
+                    suggestions.forEach(item => {
+                        const div = document.createElement('div');
+                        div.className = 'dropdown-item text-light border-bottom border-secondary border-opacity-25 py-2';
+                        div.style.cursor = 'pointer';
+                        div.innerHTML = `<i class="bi bi-file-earmark-lock text-info me-2"></i>${item}`;
+                        div.onclick = function() {
+                            searchInput.value = item;
+                            suggestionsBox.style.display = 'none';
+                            performSearch(item);
+                        };
+                        suggestionsBox.appendChild(div);
+                    });
+                    suggestionsBox.style.display = 'block';
+                } else {
+                    suggestionsBox.style.display = 'none';
+                }
+            } catch (err) {
+                console.error('Autocomplete failed:', err);
+            }
+        });
+
+        // Hide suggestions on click outside
+        document.addEventListener('click', function(e) {
+            if (!searchInput.contains(e.target) && !suggestionsBox.contains(e.target)) {
+                suggestionsBox.style.display = 'none';
+            }
+        });
+
+        // 3. Load Sidebar Components
+        async function loadSidebar() {
+            try {
+                const response = await fetch('/api/analytics-data');
+                const data = await response.json();
+
+                // Load Heap Top Files
+                const heapList = document.getElementById('heap-top-files-list');
+                heapList.innerHTML = '';
+                if (data.top_files.length === 0) {
+                    heapList.innerHTML = '<div class="text-muted small py-2">No files accessed yet.</div>';
+                } else {
+                    data.top_files.forEach(f => {
+                        const item = document.createElement('div');
+                        item.className = 'd-flex justify-content-between align-items-center mb-2 pb-2 border-bottom border-secondary border-opacity-10';
+                        item.innerHTML = `
+                            <div class="text-truncate me-2" style="max-width: 70%;" title="${f.name}">
+                                <i class="bi bi-file-earmark-text text-info me-1"></i>
+                                <span class="text-white small fw-bold">${f.name}</span>
+                            </div>
+                            <span class="badge bg-warning bg-opacity-10 text-warning font-monospace" style="font-size: 0.7rem;">${f.access_count} views</span>
+                        `;
+                        heapList.appendChild(item);
+                    });
+                }
+
+                // Load Activity Logs
+                const logList = document.getElementById('activity-log-list');
+                logList.innerHTML = '';
+                if (data.activities.length === 0) {
+                    logList.innerHTML = '<div class="text-muted small py-2">No activities recorded.</div>';
+                } else {
+                    data.activities.slice(0, 7).forEach(a => {
+                        let icon = 'bi-info-circle';
+                        let colorClass = 'text-muted';
+                        
+                        if (a.action === 'upload') { icon = 'bi-cloud-upload'; colorClass = 'text-primary'; }
+                        else if (a.action === 'download') { icon = 'bi-download'; colorClass = 'text-success'; }
+                        else if (a.action === 'view') { icon = 'bi-eye'; colorClass = 'text-warning'; }
+                        else if (a.action === 'verify') { icon = 'bi-shield-check'; colorClass = 'text-info'; }
+                        else if (a.action === 'delete') { icon = 'bi-trash'; colorClass = 'text-danger'; }
+
+                        const logEl = document.createElement('div');
+                        logEl.className = 'mb-2 pb-2 border-bottom border-secondary border-opacity-10';
+                        logEl.innerHTML = `
+                            <div class="d-flex justify-content-between align-items-center mb-1">
+                                <span class="${colorClass} fw-bold text-uppercase" style="font-size: 0.65rem;">
+                                    <i class="bi ${icon} me-1"></i>${a.action}
+                                </span>
+                                <span class="text-muted" style="font-size: 0.6rem;">${a.timestamp.split(' ')[1]}</span>
+                            </div>
+                            <div class="text-white text-truncate" title="${a.filename}">${a.filename}</div>
+                            <div class="text-muted font-monospace mt-0.5" style="font-size: 0.55rem; text-overflow: ellipsis; overflow: hidden; white-space: nowrap;">
+                                Tx: ${a.blockchain_tx ? a.blockchain_tx.substring(0, 16) + '...' : 'GENESIS'}
+                            </div>
+                        `;
+                        logList.appendChild(logEl);
+                    });
+                }
+
+            } catch (err) {
+                console.error('Sidebar loading failed:', err);
+                document.getElementById('heap-top-files-list').innerHTML = '<div class="text-danger small">Failed to load statistics.</div>';
+                document.getElementById('activity-log-list').innerHTML = '<div class="text-danger small">Failed to load audit trail.</div>';
+            }
+        }
+
+        // Initialize sidebar on load
+        loadSidebar();
     </script>
 </body>
 

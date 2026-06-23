@@ -11,9 +11,15 @@ from dotenv import load_dotenv
 load_dotenv()
 
 app = Flask(__name__)
+basedir = os.path.abspath(os.path.dirname(__file__))
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev-key-12345')
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///database.db'
-app.config['UPLOAD_FOLDER'] = os.path.join(os.path.abspath(os.curdir), 'uploads')
+
+instance_dir = os.path.join(basedir, 'instance')
+if not os.path.exists(instance_dir):
+    os.makedirs(instance_dir)
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(instance_dir, 'database.db')
+
+app.config['UPLOAD_FOLDER'] = os.path.join(basedir, 'uploads')
 
 if not os.path.exists(app.config['UPLOAD_FOLDER']):
     os.makedirs(app.config['UPLOAD_FOLDER'])
@@ -53,6 +59,21 @@ class File(db.Model):
     password_hint = db.Column(db.String(255))
     description = db.Column(db.Text)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    access_count = db.Column(db.Integer, default=0)
+    tags = db.Column(db.String(255), default="")
+    text_preview = db.Column(db.Text, default="")
+
+class ActivityLog(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    action = db.Column(db.String(100), nullable=False) # upload, download, share, delete, verify
+    filename = db.Column(db.String(255))
+    file_id = db.Column(db.Integer, nullable=True)
+    timestamp = db.Column(db.DateTime, default=datetime.utcnow)
+    blockchain_tx = db.Column(db.String(255)) # transaction hash in simulated blockchain
+    
+    # Relationship
+    user = db.relationship('User', backref=db.backref('activities', lazy=True))
 
 @login_manager.user_loader
 def load_user(user_id):
@@ -62,6 +83,8 @@ from utils.encryption import get_file_hash, encrypt_file, decrypt_file_data
 from utils.blockchain import BlockchainInterface
 from utils.conversion import convert_file
 from utils.extraction import extract_text_content
+from utils.dsa import Trie, MaxHeap
+from utils.ml import generate_tags, cosine_similarity
 import uuid
 import io
 import mimetypes
@@ -175,6 +198,25 @@ def upload_file():
             # 1. Hashing
             f_hash = get_file_hash(file_path)
 
+            # Read raw file content to extract text for ML tags and duplicate checks
+            with open(file_path, "rb") as f_temp:
+                file_bytes = f_temp.read()
+            
+            extracted_text, _ = extract_text_content(file_bytes, original_name)
+            
+            # Generate tags
+            smart_tags = generate_tags(extracted_text, original_name)
+            
+            # Near-duplicate detection
+            duplicate_warning = None
+            existing_files = File.query.filter_by(owner_id=current_user.id).all()
+            for existing in existing_files:
+                if existing.text_preview:
+                    sim = cosine_similarity(extracted_text, existing.text_preview)
+                    if sim > 0.9:
+                        duplicate_warning = f"Notice: This file is highly similar ({int(sim*100)}%) to an existing file: {existing.original_name}"
+                        break
+
             # 2. Blockchain
             success, tx_hash = blockchain.store_file_hash(f_hash, current_user.email)
             
@@ -193,12 +235,28 @@ def upload_file():
                 is_locked=True,
                 file_password=hashed_file_password,
                 password_hint=password_hint,
-                description=description
+                description=description,
+                tags=smart_tags,
+                text_preview=extracted_text[:1000]
             )
             db.session.add(new_file)
             db.session.commit()
 
-            flash(f"File uploaded successfully to {'folder ' + folder.name if folder_id else 'Root Directory'} and secured!", 'success')
+            # 5. Audit Log (ActivityLog & Simulated Blockchain Ledger)
+            _, tx_hash_audit = blockchain.log_action("upload", current_user.email, original_name, f_hash)
+            log_entry = ActivityLog(
+                user_id=current_user.id,
+                action="upload",
+                filename=original_name,
+                file_id=new_file.id,
+                blockchain_tx=tx_hash_audit
+            )
+            db.session.add(log_entry)
+            db.session.commit()
+
+            if duplicate_warning:
+                flash(duplicate_warning, 'warning')
+            flash(f"File uploaded successfully to {'folder ' + folder.name if folder_id else 'Root Directory'} and secured! Generated tags: {smart_tags}", 'success')
             return redirect(url_for('dashboard'))
 
     folders = Folder.query.filter_by(owner_id=current_user.id).all()
@@ -221,6 +279,19 @@ def download_file(file_id):
         
         decrypted_data = decrypt_file_data(encrypted_data, password)
         if decrypted_data:
+            file_record.access_count += 1
+            
+            _, tx_hash_audit = blockchain.log_action("download", current_user.email, file_record.original_name, file_record.file_hash)
+            log_entry = ActivityLog(
+                user_id=current_user.id,
+                action="download",
+                filename=file_record.original_name,
+                file_id=file_record.id,
+                blockchain_tx=tx_hash_audit
+            )
+            db.session.add(log_entry)
+            db.session.commit()
+            
             import io
             mime_type, _ = mimetypes.guess_type(file_record.original_name)
             return send_file(
@@ -341,6 +412,18 @@ def view_file_content(file_id):
         
         decrypted_data = decrypt_file_data(encrypted_data, password)
         if decrypted_data:
+            file_record.access_count += 1
+            _, tx_hash_audit = blockchain.log_action("view", current_user.email, file_record.original_name, file_record.file_hash)
+            log_entry = ActivityLog(
+                user_id=current_user.id,
+                action="view",
+                filename=file_record.original_name,
+                file_id=file_record.id,
+                blockchain_tx=tx_hash_audit
+            )
+            db.session.add(log_entry)
+            db.session.commit()
+            
             mime_type, _ = mimetypes.guess_type(file_record.original_name)
             
             # Image handling
@@ -430,11 +513,23 @@ def delete_file(file_id):
     if file_record.owner_id != current_user.id:
         return "Access Denied", 403
     
+    original_name = file_record.original_name
+    file_hash = file_record.file_hash
+    
     folder_id_str = str(file_record.folder_id) if file_record.folder_id else ""
     file_path = os.path.join(app.config['UPLOAD_FOLDER'], folder_id_str, file_record.filename)
     if os.path.exists(file_path):
         os.remove(file_path)
     
+    _, tx_hash_audit = blockchain.log_action("delete", current_user.email, original_name, file_hash)
+    log_entry = ActivityLog(
+        user_id=current_user.id,
+        action="delete",
+        filename=original_name,
+        file_id=None,
+        blockchain_tx=tx_hash_audit
+    )
+    db.session.add(log_entry)
     db.session.delete(file_record)
     db.session.commit()
     flash('File deleted from storage and blockchain history.', 'success')
@@ -543,7 +638,129 @@ def chatbot():
         
     return jsonify({'response': response})
 
+@app.route('/autocomplete')
+@login_required
+def autocomplete():
+    query = request.args.get('query', '').strip()
+    if not query:
+        return jsonify([])
+    
+    trie = Trie()
+    user_files = File.query.filter_by(owner_id=current_user.id).all()
+    for f in user_files:
+        trie.insert(f.original_name, f.original_name)
+        
+    results = trie.search_prefix(query)
+    return jsonify(results)
+
+@app.route('/verify/<int:file_id>', methods=['POST'])
+@login_required
+def verify_file_integrity(file_id):
+    file_record = File.query.get_or_404(file_id)
+    if file_record.owner_id != current_user.id:
+        return jsonify({'success': False, 'error': 'Access Denied'}), 403
+        
+    data = request.json or {}
+    password = data.get('password')
+    if not password or not bcrypt.check_password_hash(file_record.file_password, password):
+        return jsonify({'success': False, 'error': 'Incorrect or missing password'}), 401
+        
+    folder_id_str = str(file_record.folder_id) if file_record.folder_id else ""
+    file_path = os.path.join(app.config['UPLOAD_FOLDER'], folder_id_str, file_record.filename)
+    
+    if not os.path.exists(file_path):
+        return jsonify({'success': False, 'error': 'File not found on disk'})
+        
+    with open(file_path, 'rb') as f:
+        encrypted_data = f.read()
+    decrypted_data = decrypt_file_data(encrypted_data, password)
+    if not decrypted_data:
+        return jsonify({'success': False, 'error': 'Decryption failed'}), 500
+        
+    import hashlib
+    computed_hash = hashlib.sha256(decrypted_data).hexdigest()
+    is_valid = (computed_hash == file_record.file_hash)
+    
+    verified_on_blockchain, bc_data = blockchain.verify_file(computed_hash)
+    
+    _, tx_hash_audit = blockchain.log_action("verify", current_user.email, file_record.original_name, computed_hash)
+    log_entry = ActivityLog(
+        user_id=current_user.id,
+        action="verify",
+        filename=file_record.original_name,
+        file_id=file_record.id,
+        blockchain_tx=tx_hash_audit
+    )
+    db.session.add(log_entry)
+    db.session.commit()
+    
+    return jsonify({
+        'success': True,
+        'is_valid': is_valid and verified_on_blockchain,
+        'db_hash': file_record.file_hash,
+        'computed_hash': computed_hash,
+        'blockchain_tx': file_record.blockchain_hash,
+        'verification_tx': tx_hash_audit,
+        'timestamp': bc_data.get('timestamp') if bc_data else None
+    })
+
+@app.route('/analytics')
+@login_required
+def analytics():
+    return render_template('analytics.html')
+
+@app.route('/api/analytics-data')
+@login_required
+def api_analytics_data():
+    user_files = File.query.filter_by(owner_id=current_user.id).all()
+    
+    total_files = len(user_files)
+    total_size = 0
+    file_types = {}
+    
+    for f in user_files:
+        folder_id_str = str(f.folder_id) if f.folder_id else ""
+        file_path = os.path.join(app.config['UPLOAD_FOLDER'], folder_id_str, f.filename)
+        if os.path.exists(file_path):
+            total_size += os.path.getsize(file_path)
+            
+        ext = f.original_name.split('.')[-1].upper() if '.' in f.original_name else 'UNKNOWN'
+        file_types[ext] = file_types.get(ext, 0) + 1
+        
+    heap = MaxHeap()
+    for f in user_files:
+        heap.insert((f.access_count, f))
+        
+    top_files = []
+    for _ in range(min(5, heap.size())):
+        item = heap.extract_max()
+        if item:
+            access_count, f_obj = item
+            top_files.append({
+                'id': f_obj.id,
+                'name': f_obj.original_name,
+                'access_count': access_count,
+                'tags': f_obj.tags
+            })
+            
+    logs = ActivityLog.query.filter_by(user_id=current_user.id).order_by(ActivityLog.timestamp.desc()).limit(15).all()
+    activities = [{
+        'id': l.id,
+        'action': l.action,
+        'filename': l.filename,
+        'timestamp': l.timestamp.strftime('%Y-%m-%d %H:%M:%S'),
+        'blockchain_tx': l.blockchain_tx
+    } for l in logs]
+    
+    return jsonify({
+        'total_files': total_files,
+        'total_size_bytes': total_size,
+        'file_types': file_types,
+        'top_files': top_files,
+        'activities': activities
+    })
+
 if __name__ == '__main__':
     with app.app_context():
         db.create_all()
-    app.run(debug=True, port=5000)
+    app.run(debug=True, port=int(os.environ.get('PORT', 5001)))

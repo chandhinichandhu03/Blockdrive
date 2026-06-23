@@ -44,6 +44,30 @@ class BlockchainInterface:
             return True, data[file_hash]
         return False, None
 
+    def log_action(self, action, user_email, file_name, file_hash=None):
+        """
+        Logs an audit action into the simulated blockchain ledger.
+        """
+        data = self._get_sim_data()
+        if 'audit_trail' not in data:
+            data['audit_trail'] = []
+            
+        nonce = os.urandom(8).hex()
+        payload = f"{action}-{user_email}-{file_name}-{file_hash or ''}-{nonce}"
+        tx_hash = hashlib.sha256(payload.encode()).hexdigest()
+        
+        block = {
+            "tx_hash": tx_hash,
+            "action": action,
+            "user": user_email,
+            "file_name": file_name,
+            "file_hash": file_hash,
+            "timestamp": str(datetime.now())
+        }
+        data['audit_trail'].append(block)
+        self._save_sim_data(data)
+        return True, tx_hash
+
 # Importing datetime inside the class or top level
 from datetime import datetime
 import hashlib

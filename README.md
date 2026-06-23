@@ -16,16 +16,63 @@ A premium, secure web application for storing, locking, and converting files wit
 - **Security**: AES-256 (PyCryptodome), SHA-256
 - **Frontend**: HTML5, Premium CSS (Glassmorphism), JavaScript, Bootstrap 5
 
-## Setup Instructions
-1. Install dependencies:
+## Setup & Running Instructions
+
+### Prerequisites
+Make sure you have **Python 3.8+** installed on your system.
+
+### For macOS / Linux
+
+1. **Create and activate a virtual environment (optional but recommended):**
+   ```bash
+   python3 -m venv venv
+   source venv/bin/activate
+   ```
+2. **Install dependencies:**
    ```bash
    pip install -r requirements.txt
    ```
-2. Run the application:
+3. **Seed the database (to create the demo user):**
    ```bash
+   python3 seed_db.py
+   ```
+4. **Run the application:**
+   ```bash
+   python3 app.py
+   ```
+5. **Access the application:**
+   Open `http://127.0.0.1:5001` in your browser.
+
+---
+
+### For Windows
+
+1. **Create and activate a virtual environment (optional but recommended):**
+   ```cmd
+   python -m venv venv
+   venv\Scripts\activate
+   ```
+2. **Install dependencies:**
+   ```cmd
+   pip install -r requirements.txt
+   ```
+3. **Seed the database (to create the demo user):**
+   ```cmd
+   python seed_db.py
+   ```
+4. **Run the application:**
+   ```cmd
    python app.py
    ```
-3. Open `http://127.0.0.1:5000` in your browser.
+5. **Access the application:**
+   Open `http://127.0.0.1:5001` in your browser.
+
+---
+
+### Default Login Credentials
+Use the following credentials to access the demo user account:
+- **Email:** `demo@example.com`
+- **Password:** `password123`
 
 ## Security Architecture
 1. **User Auth**: Password hashed with Bcrypt.
