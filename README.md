@@ -49,20 +49,22 @@ Make sure you have **Python 3.8+** installed on your system.
 
 1. **Create and activate a virtual environment (optional but recommended):**
    ```cmd
-   python -m venv venv
-   venv\Scripts\activate
+   py -m venv venv
+   venv\Scripts\Activate.ps1
+
    ```
 2. **Install dependencies:**
    ```cmd
+   py -m pip install --upgrade pip
    pip install -r requirements.txt
    ```
 3. **Seed the database (to create the demo user):**
    ```cmd
-   python seed_db.py
+   py seed_db.py
    ```
 4. **Run the application:**
    ```cmd
-   python app.py
+   py app.py
    ```
 5. **Access the application:**
    Open `http://127.0.0.1:5001` in your browser.
@@ -85,3 +87,10 @@ Use the following credentials to access the demo user account:
    - User requests download.
    - System verifies file password.
    - System decrypts file in memory and serves the original stream.
+
+run code in terminal
+
+
+py -m venv venv
+venv\Scripts\Activate.ps1
+venv\Scripts\python app.py
